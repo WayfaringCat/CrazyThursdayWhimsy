@@ -1,5 +1,5 @@
-const API_KEY = '3f062c1a4a3e40049fb2949105685ad0.J4NmXPfhrMVMTyok';
-const API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+const API_KEY = 'sk-nyrnyqqbkvpucttjkcrnaiiefadepvsyrhfssukmgfzvaaid';
+const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
 
 const stylePrompts = {
     hot: (length) => `你是一个专业的文案创作者，擅长写"疯狂星期四"文案。请创作一个"时政热点欺诈型"的疯狂星期四文案。
@@ -68,19 +68,11 @@ async function generateContent() {
                 'Authorization': `Bearer ${API_KEY}`
             },
             body: JSON.stringify({
-                model: 'glm-4.7-flash',
+                model: 'Pro/moonshotai/Kimi-K2.5',
                 messages: [
                     {
                         role: 'user',
                         content: prompt
-                    }
-                ],
-                tools: [
-                    {
-                        type: 'web_search',
-                        web_search: {
-                            enable: true
-                        }
                     }
                 ],
                 temperature: 0.8,
