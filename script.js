@@ -1,5 +1,5 @@
-const API_KEY = '3f062c1a4a3e40049fb2949105685ad0.J4NmXPfhrMVMTyok';
-const API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+const API_KEY = 'sk-WUnaFKemy2rZL6IUNJvZWH4oGa3v089fgaaWjmZBAI1xsqb6';
+const API_URL = 'https://api.moonshot.cn/v1/chat/completions';
 
 const stylePrompts = {
     hot: (length) => `请联网搜索最近一周的热点话题，然后根据热点话题写3段不同的搞笑"疯狂星期四"文案。注意要在输出的内容前面标注上热点事件的内容和时间。
@@ -91,7 +91,7 @@ async function generateContent() {
         const prompt = stylePrompts[style](length);
 
         console.log('发送请求:', API_URL);
-        console.log('请求模型: glm-4.7-flashx');
+        console.log('请求模型: kimi-k2-turbo-preview');
 
         const response = await fetch(API_URL, {
             method: 'POST',
@@ -100,7 +100,7 @@ async function generateContent() {
                 'Authorization': `Bearer ${API_KEY}`
             },
             body: JSON.stringify({
-                model: 'glm-4.7-flashx',
+                model: 'kimi-k2-turbo-preview',
                 messages: [
                     {
                         role: 'user',
@@ -109,9 +109,9 @@ async function generateContent() {
                 ],
                 tools: [
                     {
-                        type: 'web_search',
-                        web_search: {
-                            enable: true
+                        type: 'builtin_function',
+                        function: {
+                            name: '$web_search'
                         }
                     }
                 ],

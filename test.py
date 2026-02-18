@@ -11,9 +11,9 @@ import json
 import ssl
 import sys
 
-# API 配置 (智谱 AI)
-API_KEY = '3f062c1a4a3e40049fb2949105685ad0.J4NmXPfhrMVMTyok'
-API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
+# API 配置 (Kimi)
+API_KEY = 'sk-WUnaFKemy2rZL6IUNJvZWH4oGa3v089fgaaWjmZBAI1xsqb6'
+API_URL = 'https://api.moonshot.cn/v1/chat/completions'
 
 # Prompt 模板
 STYLE_PROMPTS = {
@@ -123,13 +123,13 @@ def test_api_connection():
     print("=" * 60)
     
     data = {
-        'model': 'glm-4.7-flashx',
+        'model': 'kimi-k2-turbo-preview',
         'messages': [{'role': 'user', 'content': '你好，请回复"API连接正常"'}],
         'max_tokens': 100
     }
     
     print(f"请求 URL: {API_URL}")
-    print(f"请求模型: glm-4.7-flashx")
+    print(f"请求模型: kimi-k2-turbo-preview")
     print("\n发送请求中...")
     
     status, result = make_request(data, timeout=30)
@@ -154,9 +154,9 @@ def test_web_search():
     print("=" * 60)
     
     data = {
-        'model': 'glm-4.7-flashx',
+        'model': 'kimi-k2-turbo-preview',
         'messages': [{'role': 'user', 'content': '今天有什么热点新闻？简要回答'}],
-        'tools': [{'type': 'web_search', 'web_search': {'enable': True}}],
+        'tools': [{'type': 'builtin_function', 'function': {'name': '$web_search'}}],
         'max_tokens': 300
     }
     
@@ -179,9 +179,9 @@ def generate_crazy_thursday_text(style, length):
     prompt = STYLE_PROMPTS[style](length)
     
     data = {
-        'model': 'glm-4.7-flashx',
+        'model': 'kimi-k2-turbo-preview',
         'messages': [{'role': 'user', 'content': prompt}],
-        'tools': [{'type': 'web_search', 'web_search': {'enable': True}}],
+        'tools': [{'type': 'builtin_function', 'function': {'name': '$web_search'}}],
         'temperature': 0.8,
         'max_tokens': 4096
     }
