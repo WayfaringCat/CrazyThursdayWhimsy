@@ -169,7 +169,7 @@ def generate_crazy_thursday_text(style, length):
         'messages': [{'role': 'user', 'content': prompt}],
         'tools': [{'type': 'web_search', 'web_search': {'enable': True}}],
         'temperature': 0.8,
-        'max_tokens': 800
+        'max_tokens': 2048
     }
     
     status, result = make_request(data, timeout=60)

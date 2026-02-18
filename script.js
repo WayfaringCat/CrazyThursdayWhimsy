@@ -99,7 +99,7 @@ async function generateContent() {
                     }
                 ],
                 temperature: 0.8,
-                max_tokens: 800
+                max_tokens: 2048
             })
         });
 
@@ -129,26 +129,19 @@ async function generateContent() {
         if (data.choices && data.choices[0]) {
             if (data.choices[0].message && data.choices[0].message.content) {
                 content = data.choices[0].message.content;
-            } else if (data.choices[0].text) {
-                content = data.choices[0].text;
-            } else if (data.choices[0].delta && data.choices[0].delta.content) {
-                content = data.choices[0].delta.content;
             }
-        }
-        
-        if (data.content) {
-            content = data.content;
-        }
-        
-        if (data.result) {
-            content = data.result;
+            // GLM-4.7-FlashX 可能有 reasoning_content
+            if (!content && data.choices[0].message && data.choices[0].message.reasoning_content) {
+                content = data.choices[0].message.reasoning_content;
+            }
         }
 
         console.log('提取的内容:', content);
+        console.log('finish_reason:', data.choices ? data.choices[0].finish_reason : 'N/A');
 
         if (!content || content.trim() === '') {
             // 显示原始响应用于调试
-            resultText.textContent = `⚠️ API返回内容为空或格式异常\n\n原始响应:\n${JSON.stringify(data, null, 2).substring(0, 1000)}\n\n请检查浏览器控制台(F12)查看完整信息`;
+            resultText.textContent = `⚠️ API返回内容为空\n\nfinish_reason: ${data.choices ? data.choices[0].finish_reason : 'N/A'}\n\n原始响应:\n${JSON.stringify(data, null, 2).substring(0, 1000)}\n\n请检查浏览器控制台(F12)查看完整信息`;
             resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             return;
         }
