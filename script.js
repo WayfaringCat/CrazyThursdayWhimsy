@@ -155,27 +155,29 @@ async function generateContent() {
                 messages.push(data.choices[0].message);
                 
                 // 为每个工具调用添加执行结果
-                // 注意：对于 $web_search，我们只需要告诉模型搜索已完成
+                // 对于 $web_search，我们传递搜索ID，让 Kimi 服务端获取结果
                 for (const toolCall of data.choices[0].message.tool_calls) {
                     if (toolCall.function.name === '$web_search') {
+                        // 解析工具调用的参数，获取 search_id
+                        let toolArgs;
+                        try {
+                            toolArgs = JSON.parse(toolCall.function.arguments);
+                        } catch (e) {
+                            toolArgs = {};
+                        }
+                        
+                        // 添加工具调用结果，包含 search_id
                         messages.push({
                             role: 'tool',
                             tool_call_id: toolCall.id,
-                            content: '搜索完成，请根据搜索结果生成文案。'
+                            content: toolCall.function.arguments
                         });
                     }
                 }
                 
-                // 第二次调用，获取最终生成的文案
+                // 第二次调用，获取最终生成的文案（不传递 tools，让模型基于搜索结果生成）
                 console.log('发送第二次请求，获取最终文案...');
-                data = await makeRequest(messages, [
-                    {
-                        type: 'builtin_function',
-                        function: {
-                            name: '$web_search'
-                        }
-                    }
-                ]);
+                data = await makeRequest(messages, null);
                 
                 console.log('第二次响应:', data);
             }
