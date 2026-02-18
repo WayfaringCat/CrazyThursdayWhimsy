@@ -67,9 +67,14 @@ async function generateContent() {
     const length = document.querySelector('input[name="length"]:checked').value;
 
     setLoading(true);
+    resultPanel.classList.remove('hidden');
+    resultText.textContent = '正在生成中，请稍候...';
 
     try {
         const prompt = stylePrompts[style](length);
+
+        console.log('发送请求:', API_URL);
+        console.log('请求模型: glm-4.7-flashx');
 
         const response = await fetch(API_URL, {
             method: 'POST',
@@ -98,21 +103,39 @@ async function generateContent() {
             })
         });
 
+        console.log('响应状态:', response.status);
+
+        const responseText = await response.text();
+        console.log('原始响应:', responseText);
+
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            throw new Error(`HTTP ${response.status}: ${responseText}`);
         }
 
-        const data = await response.json();
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (e) {
+            throw new Error(`JSON解析失败: ${e.message}\n原始响应: ${responseText.substring(0, 500)}`);
+        }
+
+        console.log('解析后的数据:', data);
+
+        if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+            throw new Error(`API返回格式异常: ${JSON.stringify(data, null, 2)}`);
+        }
+
         const content = data.choices[0].message.content;
 
-        resultText.textContent = content;
-        resultPanel.classList.remove('hidden');
+        if (!content || content.trim() === '') {
+            throw new Error('API返回内容为空');
+        }
 
+        resultText.textContent = content;
         resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch (error) {
         console.error('生成失败:', error);
-        resultText.textContent = '生成失败，请稍后重试。错误信息：' + error.message;
-        resultPanel.classList.remove('hidden');
+        resultText.textContent = `❌ 生成失败\n\n错误类型: ${error.name}\n错误信息: ${error.message}\n\n请检查:\n1. API Key 是否正确\n2. 网络连接是否正常\n3. 浏览器控制台(F12)查看详细错误`;
     } finally {
         setLoading(false);
     }
