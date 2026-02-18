@@ -1,11 +1,21 @@
-const API_KEY = 'sk-nyrnyqqbkvpucttjkcrnaiiefadepvsyrhfssukmgfzvaaid';
-const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
+const API_KEY = '3f062c1a4a3e40049fb2949105685ad0.J4NmXPfhrMVMTyok';
+const API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 
 const stylePrompts = {
-    hot: (length) => `你是一个专业的文案创作者，擅长写"疯狂星期四"文案。请创作一个"时政热点欺诈型"的疯狂星期四文案。
+    hot: (length) => `你是一个专业的文案创作者，擅长写"疯狂星期四"文案。请创作一个"热点事件欺诈型"的疯狂星期四文案。
+
+重要提示：今天是2026年2月18日，请使用最近一周（2026年2月11日-18日）的真实热点事件作为开头，例如：
+- 娱乐八卦、明星动态
+- 热门综艺、电视剧、电影
+- 体育赛事、电竞比赛
+- 科技产品发布、互联网热点
+- 社会趣闻、 viral 视频
+- 节日相关话题（元宵节刚过）
+
+绝对不要涉及任何政治、时政、领导人相关内容！
 
 要求：
-1. 以最近的热点事件开头（如春晚、热门电影、社会新闻等），吸引读者注意力
+1. 以最近一周的真实热点事件开头，吸引读者注意力
 2. 前面部分要写得严肃认真，让读者以为是真的在讨论热点事件
 3. 在文案中段或结尾突然转折，图穷匕见地展现出"疯狂星期四，V我50吃KFC"的核心诉求
 4. 转折要自然但又有强烈的反差感，让人哭笑不得
@@ -68,11 +78,19 @@ async function generateContent() {
                 'Authorization': `Bearer ${API_KEY}`
             },
             body: JSON.stringify({
-                model: 'Pro/moonshotai/Kimi-K2.5',
+                model: 'glm-4.7-flashx',
                 messages: [
                     {
                         role: 'user',
                         content: prompt
+                    }
+                ],
+                tools: [
+                    {
+                        type: 'web_search',
+                        web_search: {
+                            enable: true
+                        }
                     }
                 ],
                 temperature: 0.8,
