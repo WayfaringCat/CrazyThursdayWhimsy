@@ -120,15 +120,37 @@ async function generateContent() {
         }
 
         console.log('解析后的数据:', data);
+        console.log('data.choices:', data.choices);
+        console.log('data.choices[0]:', data.choices ? data.choices[0] : 'undefined');
 
-        if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-            throw new Error(`API返回格式异常: ${JSON.stringify(data, null, 2)}`);
+        // 检查各种可能的响应格式
+        let content = null;
+        
+        if (data.choices && data.choices[0]) {
+            if (data.choices[0].message && data.choices[0].message.content) {
+                content = data.choices[0].message.content;
+            } else if (data.choices[0].text) {
+                content = data.choices[0].text;
+            } else if (data.choices[0].delta && data.choices[0].delta.content) {
+                content = data.choices[0].delta.content;
+            }
+        }
+        
+        if (data.content) {
+            content = data.content;
+        }
+        
+        if (data.result) {
+            content = data.result;
         }
 
-        const content = data.choices[0].message.content;
+        console.log('提取的内容:', content);
 
         if (!content || content.trim() === '') {
-            throw new Error('API返回内容为空');
+            // 显示原始响应用于调试
+            resultText.textContent = `⚠️ API返回内容为空或格式异常\n\n原始响应:\n${JSON.stringify(data, null, 2).substring(0, 1000)}\n\n请检查浏览器控制台(F12)查看完整信息`;
+            resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            return;
         }
 
         resultText.textContent = content;
