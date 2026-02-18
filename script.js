@@ -79,17 +79,17 @@ const toast = document.getElementById('toast');
 const btnText = generateBtn.querySelector('.btn-text');
 const loadingText = generateBtn.querySelector('.loading');
 
-async function makeRequest(messages, tools = null) {
+async function makeRequest(messages, tools = null, stream = false) {
     const body = {
         model: 'kimi-k2-turbo-preview',
         messages: messages,
         temperature: 0.8,
-        max_tokens: 4096
+        max_tokens: 4096,
+        stream: stream
     };
     
     if (tools) {
         body.tools = tools;
-        body.tool_choice = 'auto';
     }
 
     const response = await fetch(API_URL, {
@@ -143,38 +143,31 @@ async function generateContent() {
 
         console.log('第一次响应:', data);
 
-        // 循环处理工具调用，直到获得最终内容
+        // 处理工具调用 - Kimi 的 $web_search 是自动执行的
         let content = null;
-        let maxIterations = 5;
-        let iteration = 0;
         
-        while (iteration < maxIterations) {
-            let finishReason = data.choices ? data.choices[0].finish_reason : null;
-            console.log(`第${iteration + 1}次调用，finish_reason:`, finishReason);
-            
-            // 如果 finish_reason 是 tool_calls，需要继续对话
-            if (finishReason === 'tool_calls' && data.choices[0].message.tool_calls) {
-                console.log('检测到工具调用，继续对话...');
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            // 如果有工具调用，需要继续对话获取最终结果
+            if (data.choices[0].finish_reason === 'tool_calls' && data.choices[0].message.tool_calls) {
+                console.log('检测到工具调用，Kimi 正在执行搜索...');
                 
-                // 将助手的消息（包含tool_calls）添加到消息列表
+                // 将助手的消息（包含 tool_calls）添加到消息列表
                 messages.push(data.choices[0].message);
                 
-                // 为每个工具调用添加结果
+                // 为每个工具调用添加执行结果
+                // 注意：对于 $web_search，我们只需要告诉模型搜索已完成
                 for (const toolCall of data.choices[0].message.tool_calls) {
                     if (toolCall.function.name === '$web_search') {
-                        // 添加工具调用结果 - 使用搜索结果
                         messages.push({
                             role: 'tool',
                             tool_call_id: toolCall.id,
-                            content: JSON.stringify({
-                                status: 'success',
-                                search_result: toolCall.function.arguments
-                            })
+                            content: '搜索完成，请根据搜索结果生成文案。'
                         });
                     }
                 }
                 
-                // 继续调用，获取最终回复
+                // 第二次调用，获取最终生成的文案
+                console.log('发送第二次请求，获取最终文案...');
                 data = await makeRequest(messages, [
                     {
                         type: 'builtin_function',
@@ -184,14 +177,12 @@ async function generateContent() {
                     }
                 ]);
                 
-                console.log(`第${iteration + 2}次响应:`, data);
-                iteration++;
-            } else {
-                // 获得最终内容
-                if (data.choices && data.choices[0] && data.choices[0].message) {
-                    content = data.choices[0].message.content;
-                }
-                break;
+                console.log('第二次响应:', data);
+            }
+            
+            // 提取最终内容
+            if (data.choices && data.choices[0] && data.choices[0].message) {
+                content = data.choices[0].message.content;
             }
         }
 
