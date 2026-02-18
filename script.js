@@ -79,6 +79,36 @@ const toast = document.getElementById('toast');
 const btnText = generateBtn.querySelector('.btn-text');
 const loadingText = generateBtn.querySelector('.loading');
 
+async function makeRequest(messages, tools = null) {
+    const body = {
+        model: 'kimi-k2-turbo-preview',
+        messages: messages,
+        temperature: 0.8,
+        max_tokens: 4096
+    };
+    
+    if (tools) {
+        body.tools = tools;
+    }
+
+    const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify(body)
+    });
+
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${responseText}`);
+    }
+
+    return JSON.parse(responseText);
+}
+
 async function generateContent() {
     const style = document.querySelector('input[name="style"]:checked').value;
     const length = document.querySelector('input[name="length"]:checked').value;
@@ -93,71 +123,70 @@ async function generateContent() {
         console.log('发送请求:', API_URL);
         console.log('请求模型: kimi-k2-turbo-preview');
 
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${API_KEY}`
-            },
-            body: JSON.stringify({
-                model: 'kimi-k2-turbo-preview',
-                messages: [
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
-                tools: [
-                    {
-                        type: 'builtin_function',
-                        function: {
-                            name: '$web_search'
-                        }
-                    }
-                ],
-                temperature: 0.8,
-                max_tokens: 4096
-            })
-        });
+        // 第一次调用，可能触发工具调用
+        let messages = [
+            {
+                role: 'user',
+                content: prompt
+            }
+        ];
 
-        console.log('响应状态:', response.status);
+        let data = await makeRequest(messages, [
+            {
+                type: 'builtin_function',
+                function: {
+                    name: '$web_search'
+                }
+            }
+        ]);
 
-        const responseText = await response.text();
-        console.log('原始响应:', responseText);
+        console.log('第一次响应:', data);
 
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${responseText}`);
-        }
-
-        let data;
-        try {
-            data = JSON.parse(responseText);
-        } catch (e) {
-            throw new Error(`JSON解析失败: ${e.message}\n原始响应: ${responseText.substring(0, 500)}`);
-        }
-
-        console.log('解析后的数据:', data);
-        console.log('data.choices:', data.choices);
-        console.log('data.choices[0]:', data.choices ? data.choices[0] : 'undefined');
-
-        // 检查各种可能的响应格式
+        // 检查是否需要处理工具调用
         let content = null;
+        let finishReason = data.choices ? data.choices[0].finish_reason : null;
         
-        if (data.choices && data.choices[0]) {
-            if (data.choices[0].message && data.choices[0].message.content) {
-                content = data.choices[0].message.content;
+        // 如果 finish_reason 是 tool_calls，需要继续对话
+        if (finishReason === 'tool_calls' && data.choices[0].message.tool_calls) {
+            console.log('检测到工具调用，继续对话...');
+            
+            // 将助手的消息（包含tool_calls）添加到消息列表
+            messages.push(data.choices[0].message);
+            
+            // 为每个工具调用添加结果
+            for (const toolCall of data.choices[0].message.tool_calls) {
+                if (toolCall.function.name === '$web_search') {
+                    // 添加工具调用结果
+                    messages.push({
+                        role: 'tool',
+                        tool_call_id: toolCall.id,
+                        content: toolCall.function.arguments
+                    });
+                }
             }
-            // GLM-4.7-FlashX 可能有 reasoning_content
-            if (!content && data.choices[0].message && data.choices[0].message.reasoning_content) {
-                content = data.choices[0].message.reasoning_content;
-            }
+            
+            // 第二次调用，获取最终回复
+            data = await makeRequest(messages, [
+                {
+                    type: 'builtin_function',
+                    function: {
+                        name: '$web_search'
+                    }
+                }
+            ]);
+            
+            console.log('第二次响应:', data);
+        }
+
+        // 提取最终内容
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            content = data.choices[0].message.content;
         }
 
         console.log('提取的内容:', content);
         console.log('finish_reason:', data.choices ? data.choices[0].finish_reason : 'N/A');
 
         if (!content || content.trim() === '') {
-            // 显示原始响应用于调试
             resultText.textContent = `⚠️ API返回内容为空\n\nfinish_reason: ${data.choices ? data.choices[0].finish_reason : 'N/A'}\n\n原始响应:\n${JSON.stringify(data, null, 2).substring(0, 1000)}\n\n请检查浏览器控制台(F12)查看完整信息`;
             resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             return;
