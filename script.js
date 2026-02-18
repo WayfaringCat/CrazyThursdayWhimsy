@@ -89,6 +89,7 @@ async function makeRequest(messages, tools = null) {
     
     if (tools) {
         body.tools = tools;
+        body.tool_choice = 'auto';
     }
 
     const response = await fetch(API_URL, {
@@ -142,45 +143,56 @@ async function generateContent() {
 
         console.log('第一次响应:', data);
 
-        // 检查是否需要处理工具调用
+        // 循环处理工具调用，直到获得最终内容
         let content = null;
-        let finishReason = data.choices ? data.choices[0].finish_reason : null;
+        let maxIterations = 5;
+        let iteration = 0;
         
-        // 如果 finish_reason 是 tool_calls，需要继续对话
-        if (finishReason === 'tool_calls' && data.choices[0].message.tool_calls) {
-            console.log('检测到工具调用，继续对话...');
+        while (iteration < maxIterations) {
+            let finishReason = data.choices ? data.choices[0].finish_reason : null;
+            console.log(`第${iteration + 1}次调用，finish_reason:`, finishReason);
             
-            // 将助手的消息（包含tool_calls）添加到消息列表
-            messages.push(data.choices[0].message);
-            
-            // 为每个工具调用添加结果
-            for (const toolCall of data.choices[0].message.tool_calls) {
-                if (toolCall.function.name === '$web_search') {
-                    // 添加工具调用结果
-                    messages.push({
-                        role: 'tool',
-                        tool_call_id: toolCall.id,
-                        content: toolCall.function.arguments
-                    });
-                }
-            }
-            
-            // 第二次调用，获取最终回复
-            data = await makeRequest(messages, [
-                {
-                    type: 'builtin_function',
-                    function: {
-                        name: '$web_search'
+            // 如果 finish_reason 是 tool_calls，需要继续对话
+            if (finishReason === 'tool_calls' && data.choices[0].message.tool_calls) {
+                console.log('检测到工具调用，继续对话...');
+                
+                // 将助手的消息（包含tool_calls）添加到消息列表
+                messages.push(data.choices[0].message);
+                
+                // 为每个工具调用添加结果
+                for (const toolCall of data.choices[0].message.tool_calls) {
+                    if (toolCall.function.name === '$web_search') {
+                        // 添加工具调用结果 - 使用搜索结果
+                        messages.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            content: JSON.stringify({
+                                status: 'success',
+                                search_result: toolCall.function.arguments
+                            })
+                        });
                     }
                 }
-            ]);
-            
-            console.log('第二次响应:', data);
-        }
-
-        // 提取最终内容
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            content = data.choices[0].message.content;
+                
+                // 继续调用，获取最终回复
+                data = await makeRequest(messages, [
+                    {
+                        type: 'builtin_function',
+                        function: {
+                            name: '$web_search'
+                        }
+                    }
+                ]);
+                
+                console.log(`第${iteration + 2}次响应:`, data);
+                iteration++;
+            } else {
+                // 获得最终内容
+                if (data.choices && data.choices[0] && data.choices[0].message) {
+                    content = data.choices[0].message.content;
+                }
+                break;
+            }
         }
 
         console.log('提取的内容:', content);
