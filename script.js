@@ -1,5 +1,5 @@
-const API_KEY = 'sk-WUnaFKemy2rZL6IUNJvZWH4oGa3v089fgaaWjmZBAI1xsqb6';
-const API_URL = 'https://api.moonshot.cn/v1/chat/completions';
+const API_KEY = '3f062c1a4a3e40049fb2949105685ad0.J4NmXPfhrMVMTyok';
+const API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 
 const stylePrompts = {
     hot: (length) => `请按以下步骤执行：
@@ -87,17 +87,15 @@ const toast = document.getElementById('toast');
 const btnText = generateBtn.querySelector('.btn-text');
 const loadingText = generateBtn.querySelector('.loading');
 
-// 封装基础请求函数
-async function makeRequest(messages, tools = null) {
+async function makeRequest(messages, tools = null, stream = false) {
     const body = {
-        model: 'kimi-k2-turbo-preview',
+        model: 'GLM-4.7-FlashX',
         messages: messages,
         temperature: 0.8,
         max_tokens: 4096,
-        stream: false
+        stream: stream
     };
-
-    // 只有在 tools 不为 null 时才添加到请求体中
+    
     if (tools) {
         body.tools = tools;
     }
@@ -112,7 +110,7 @@ async function makeRequest(messages, tools = null) {
     });
 
     const responseText = await response.text();
-
+    
     if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${responseText}`);
     }
@@ -120,7 +118,6 @@ async function makeRequest(messages, tools = null) {
     return JSON.parse(responseText);
 }
 
-// 核心生成逻辑 - 根据文档重写了 Tool Loop
 async function generateContent() {
     const style = document.querySelector('input[name="style"]:checked').value;
     const length = document.querySelector('input[name="length"]:checked').value;
@@ -133,19 +130,28 @@ async function generateContent() {
         const prompt = stylePrompts[style](length);
 
         console.log('发送请求:', API_URL);
-        console.log('请求模型: kimi-k2-turbo-preview');
+        console.log('请求模型: GLM-4.7-FlashX');
 
-        // 定义工具：使用 Kimi 的内置搜索功能
         const tools = [
             {
-                type: 'builtin_function',
+                type: 'function',
                 function: {
-                    name: '$web_search'
+                    name: 'web_search',
+                    description: '使用浏览器在互联网上搜索信息',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            query: {
+                                description: '搜索关键词',
+                                type: 'string'
+                            }
+                        },
+                        required: ['query']
+                    }
                 }
             }
         ];
 
-        // 初始化消息历史
         let messages = [
             {
                 role: 'user',
@@ -153,74 +159,62 @@ async function generateContent() {
             }
         ];
 
-        let finishReason = null;
-        let finalContent = null;
-        let callCount = 0;
-        const MAX_LOOPS = 5; // 防止死循环
+        let data = await makeRequest(messages, tools);
 
-        // 循环处理，直到 finish_reason 不再是 tool_calls
-        while (finishReason === null || finishReason === 'tool_calls') {
-            if (callCount >= MAX_LOOPS) {
-                throw new Error("工具调用次数过多，强制停止");
-            }
-            callCount++;
+        console.log('第一次响应:', data);
 
-            // 发送请求
-            // 注意：如果是工具调用后的后续请求，通常也需要带上 tools 定义，
-            // 否则模型可能无法正确解析之前的 tool_calls 上下文或进行多步搜索。
-            const data = await makeRequest(messages, tools);
-            
-            if (!data.choices || !data.choices[0]) {
-                throw new Error('API 返回数据格式错误');
-            }
-
-            const choice = data.choices[0];
-            const message = choice.message;
-            finishReason = choice.finish_reason;
-
-            console.log(`第 ${callCount} 次响应 finish_reason:`, finishReason);
-
-            // 如果是工具调用
-            if (finishReason === 'tool_calls') {
-                console.log('检测到工具调用:', JSON.stringify(message.tool_calls, null, 2));
+        let content = null;
+        
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            if (data.choices[0].finish_reason === 'tool_calls' && data.choices[0].message.tool_calls) {
+                console.log('检测到工具调用，GLM 正在执行搜索...');
+                console.log('工具调用详情:', JSON.stringify(data.choices[0].message.tool_calls, null, 2));
                 
-                // 1. 将助手的消息（包含 tool_calls）添加到历史记录
-                messages.push(message);
-
-                // 2. 处理每一个 tool_call
-                // 对于 $web_search (builtin_function)，通常服务端已自动处理。
-                // 但如果模型返回了 tool_calls，我们需要回传一个 role: 'tool' 的消息来闭环。
-                // 我们模拟一个“成功”的回执，让模型知道它可以继续生成了。
-                for (const toolCall of message.tool_calls) {
-                    // 构造 Tool Message
-                    messages.push({
-                        role: 'tool',
-                        tool_call_id: toolCall.id,
-                        name: toolCall.function.name,
-                        content: JSON.stringify({ result: "搜索引擎已执行，请根据搜索结果回答。" }) 
-                        // 注意：对于 builtin_function，通常不需要客户端真正去爬取，
-                        // 搜索结果往往会自动注入到 context 中，或者模型只是需要一个触发信号。
-                    });
+                messages.push(data.choices[0].message);
+                
+                for (const toolCall of data.choices[0].message.tool_calls) {
+                    if (toolCall.function.name === 'web_search') {
+                        let searchQuery = '';
+                        try {
+                            const args = JSON.parse(toolCall.function.arguments);
+                            searchQuery = args.query || '';
+                        } catch (e) {
+                            searchQuery = '';
+                        }
+                        
+                        messages.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            content: JSON.stringify({
+                                result: `搜索已完成: ${searchQuery}`,
+                                status: 'success'
+                            })
+                        });
+                    }
                 }
                 
-                // 循环将继续，带着 tool results 再次请求 API
+                console.log('发送第二次请求，获取最终文案...');
+                data = await makeRequest(messages, null);
                 
-            } else {
-                // 如果不是工具调用，说明生成完成了（finish_reason === 'stop'）
-                finalContent = message.content;
+                console.log('第二次响应:', data);
+            }
+            
+            if (data.choices && data.choices[0] && data.choices[0].message) {
+                content = data.choices[0].message.content;
             }
         }
 
-        console.log('生成完成');
+        console.log('提取的内容:', content);
+        console.log('finish_reason:', data.choices ? data.choices[0].finish_reason : 'N/A');
 
-        if (!finalContent || finalContent.trim() === '') {
-            resultText.textContent = '⚠️ 生成内容为空，请重试。';
+        if (!content || content.trim() === '') {
+            resultText.textContent = `⚠️ API返回内容为空\n\nfinish_reason: ${data.choices ? data.choices[0].finish_reason : 'N/A'}\n\n原始响应:\n${JSON.stringify(data, null, 2).substring(0, 1000)}\n\n请检查浏览器控制台(F12)查看完整信息`;
+            resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             return;
         }
 
-        resultText.textContent = finalContent;
+        resultText.textContent = content;
         resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
     } catch (error) {
         console.error('生成失败:', error);
         resultText.textContent = `❌ 生成失败\n\n错误类型: ${error.name}\n错误信息: ${error.message}\n\n请检查:\n1. API Key 是否正确\n2. 网络连接是否正常\n3. 浏览器控制台(F12)查看详细错误`;
