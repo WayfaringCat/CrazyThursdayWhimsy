@@ -22,7 +22,7 @@ ${searchResults}
 5. 显示当前的日期和时间（采用北京时间）
 
 格式：
-当前的日期是X年X月X日，时间是北京时间XXX。
+搜索数据截止的日期是X年X月X日。
 ---
 热点事件1：[一句话总结热点事件]
 文案1：
@@ -171,10 +171,10 @@ async function generateContent() {
         
         if (style === 'hot') {
             // 先进行网络搜索
-            resultText.textContent = '正在搜索微博热搜...';
-            console.log('开始搜索微博热搜...');
+            resultText.textContent = '正在搜索热搜...';
+            console.log('开始搜索热搜...');
             
-            const searchData = await webSearch('微博热搜榜 今日');
+            const searchData = await webSearch('微博热搜榜 最近一周有哪些热点事件');
             console.log('搜索结果:', searchData);
             
             const searchResults = formatSearchResults(searchData);
