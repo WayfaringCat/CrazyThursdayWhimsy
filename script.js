@@ -1,37 +1,38 @@
 const API_KEY = '3f062c1a4a3e40049fb2949105685ad0.J4NmXPfhrMVMTyok';
 const API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+const WEB_SEARCH_URL = 'https://open.bigmodel.cn/api/paas/v4/web_search';
 
 const stylePrompts = {
-    hot: (length) => `请按以下步骤执行：
+    hot: (length, searchResults) => `你是一个疯狂星期四文案撰写专家。我已经为你搜索了微博热搜的相关信息，请根据这些真实的搜索结果来撰写文案。
 
-步骤1：联网搜索"微博热搜榜"，获取当前（今天）微博热搜前10名的内容。
+以下是搜索到的微博热搜信息：
+${searchResults}
 
-步骤2：从微博热搜中挑选3个最热门、最有趣的话题（排除政治敏感话题）。
+请根据以上真实的搜索结果，完成以下任务：
 
-步骤3：分别联网搜索这3个话题的详细信息，了解事件背景、具体内容、网友讨论等。
+步骤1：从搜索结果中挑选3个最热门、最有趣的话题（排除政治敏感话题）。
 
-步骤4：根据搜索到的真实信息，写3段不同的搞笑"疯狂星期四"文案。
+步骤2：根据这些真实的热点信息，写3段不同的搞笑"疯狂星期四"文案。
 
 要求：
-1. 必须基于真实的微博热搜和搜索结果，严禁编造虚假内容！
+1. 必须基于上面提供的真实搜索结果，严禁编造虚假内容！
 2. 每段${length}字左右，前面假装认真讨论热点，后面幽默丝滑地转折到"V我50吃KFC"等类似的疯狂星期四主题文案上。
 3. 语气像朋友聊天，搞笑不严肃
 4. 直接输出3段文案，用"---"分隔
 5. 显示当前的日期和时间（采用北京时间）
-6. 热点话题必须是今天微博热搜上真实存在的
 
 格式：
 当前的日期是X年X月X日，时间是北京时间XXX。
 ---
-热点事件1：[发生时间 + 一句话总结热点事件]
+热点事件1：[一句话总结热点事件]
 文案1：
 [第一段文案内容]
 ---
-热点事件2：[发生时间 + 一句话总结热点事件]
+热点事件2：[一句话总结热点事件]
 文案2：
 [第二段文案内容]
 ---
-热点事件3：[发生时间 + 一句话总结热点事件]
+热点事件3：[一句话总结热点事件]
 文案3：
 [第三段文案内容]
 
@@ -87,25 +88,45 @@ const toast = document.getElementById('toast');
 const btnText = generateBtn.querySelector('.btn-text');
 const loadingText = generateBtn.querySelector('.loading');
 
-async function makeRequest(messages, tools = null) {
-    const body = {
-        model: 'GLM-4-AllTools',
-        messages: messages,
-        temperature: 0.8,
-        max_tokens: 4096
-    };
+async function webSearch(query) {
+    const response = await fetch(WEB_SEARCH_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify({
+            search_query: query,
+            search_engine: 'search_pro',
+            search_intent: false,
+            count: 10,
+            search_recency_filter: 'oneDay',
+            content_size: 'high'
+        })
+    });
+
+    const responseText = await response.text();
     
-    if (tools) {
-        body.tools = tools;
+    if (!response.ok) {
+        throw new Error(`搜索失败: HTTP ${response.status}: ${responseText}`);
     }
 
+    return JSON.parse(responseText);
+}
+
+async function chatCompletion(messages) {
     const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${API_KEY}`
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify({
+            model: 'GLM-4.5-Air',
+            messages: messages,
+            temperature: 0.8,
+            max_tokens: 4096
+        })
     });
 
     const responseText = await response.text();
@@ -117,22 +138,24 @@ async function makeRequest(messages, tools = null) {
     return JSON.parse(responseText);
 }
 
-function parseXmlToolCall(content) {
-    const regex = /<tool_call\s+name="([^"]+)"\s*>([\s\S]*?)<\/tool_call>/g;
-    const calls = [];
-    let match;
-    while ((match = regex.exec(content)) !== null) {
-        const name = match[1];
-        const argsStr = match[2].trim();
-        let args = {};
-        const argRegex = /<([^>]+)>([^<]*)<\/\1>/g;
-        let argMatch;
-        while ((argMatch = argRegex.exec(argsStr)) !== null) {
-            args[argMatch[1]] = argMatch[2];
-        }
-        calls.push({ name, args });
+function formatSearchResults(searchData) {
+    if (!searchData.search_result || searchData.search_result.length === 0) {
+        return '未找到相关搜索结果';
     }
-    return calls;
+    
+    let result = '';
+    searchData.search_result.forEach((item, index) => {
+        result += `\n【结果${index + 1}】\n`;
+        result += `标题: ${item.title || '无标题'}\n`;
+        result += `内容: ${item.content || '无内容'}\n`;
+        result += `来源: ${item.media || '未知'}\n`;
+        result += `链接: ${item.link || '无链接'}\n`;
+        if (item.publish_date) {
+            result += `发布时间: ${item.publish_date}\n`;
+        }
+        result += '---\n';
+    });
+    return result;
 }
 
 async function generateContent() {
@@ -144,30 +167,27 @@ async function generateContent() {
     resultText.textContent = '正在生成中，请稍候...';
 
     try {
-        const prompt = stylePrompts[style](length);
+        let prompt;
+        
+        if (style === 'hot') {
+            // 先进行网络搜索
+            resultText.textContent = '正在搜索微博热搜...';
+            console.log('开始搜索微博热搜...');
+            
+            const searchData = await webSearch('微博热搜榜 今日');
+            console.log('搜索结果:', searchData);
+            
+            const searchResults = formatSearchResults(searchData);
+            console.log('格式化的搜索结果:', searchResults);
+            
+            resultText.textContent = '搜索完成，正在生成文案...';
+            prompt = stylePrompts[style](length, searchResults);
+        } else {
+            prompt = stylePrompts[style](length);
+        }
 
         console.log('发送请求:', API_URL);
-        console.log('请求模型: GLM-4-AllTools');
-
-        const tools = [
-            {
-                type: 'function',
-                function: {
-                    name: 'web_search',
-                    description: '在互联网上搜索信息，返回搜索结果',
-                    parameters: {
-                        type: 'object',
-                        properties: {
-                            query: {
-                                type: 'string',
-                                description: '搜索关键词'
-                            }
-                        },
-                        required: ['query']
-                    }
-                }
-            }
-        ];
+        console.log('请求模型: GLM-4.5-Air');
 
         let messages = [
             {
@@ -176,70 +196,14 @@ async function generateContent() {
             }
         ];
 
-        let data = await makeRequest(messages, style === 'hot' ? tools : null);
+        const data = await chatCompletion(messages);
 
-        console.log('第一次响应:', data);
+        console.log('响应:', data);
 
         let content = null;
         
         if (data.choices && data.choices[0] && data.choices[0].message) {
-            const msg = data.choices[0].message;
-            
-            // 检查是否有工具调用（JSON格式）
-            if (data.choices[0].finish_reason === 'tool_calls' && msg.tool_calls) {
-                console.log('检测到JSON格式工具调用:', msg.tool_calls);
-                
-                messages.push(msg);
-                
-                for (const toolCall of msg.tool_calls) {
-                    if (toolCall.function.name === 'web_search') {
-                        messages.push({
-                            role: 'tool',
-                            tool_call_id: toolCall.id,
-                            content: JSON.stringify({ status: 'success', message: '搜索已完成' })
-                        });
-                    }
-                }
-                
-                data = await makeRequest(messages, tools);
-                console.log('第二次响应:', data);
-                
-                if (data.choices && data.choices[0] && data.choices[0].message) {
-                    content = data.choices[0].message.content;
-                }
-            }
-            // 检查是否有XML格式的工具调用
-            else if (msg.content && msg.content.includes('<tool_call')) {
-                console.log('检测到XML格式工具调用');
-                
-                const toolCalls = parseXmlToolCall(msg.content);
-                console.log('解析的工具调用:', toolCalls);
-                
-                messages.push(msg);
-                
-                for (const tc of toolCalls) {
-                    if (tc.name === 'web_search') {
-                        messages.push({
-                            role: 'tool',
-                            content: JSON.stringify({ 
-                                status: 'success', 
-                                query: tc.args.query || '',
-                                message: '搜索已完成，请基于搜索结果回答' 
-                            })
-                        });
-                    }
-                }
-                
-                data = await makeRequest(messages, tools);
-                console.log('第二次响应:', data);
-                
-                if (data.choices && data.choices[0] && data.choices[0].message) {
-                    content = data.choices[0].message.content;
-                }
-            }
-            else {
-                content = msg.content;
-            }
+            content = data.choices[0].message.content;
         }
 
         console.log('提取的内容:', content);
