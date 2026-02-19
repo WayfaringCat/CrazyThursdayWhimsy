@@ -3,7 +3,7 @@ const API_KEY = 'sk-WUnaFKemy2rZL6IUNJvZWH4oGa3v089fgaaWjmZBAI1xsqb6';
 const API_URL = 'https://api.moonshot.cn/v1/chat/completions';
 
 const stylePrompts = {
-    hot: (length) => `请联网搜索最近一周的热点话题，然后根据热点话题写3段不同的搞笑"疯狂星期四"文案。注意要在输出的内容前面标注上热点事件的内容和时间。
+    hot: (length) => `请联网搜索最近一周的热点话题，然后根据热点话题写3段不同的搞笑"疯狂星期四"文案。注意要在输出的内容前面标注上热点事件的内容和时间。现在是北京时间2026年2月19日。
 
 重要：必须先联网搜索确认是最新的热点，不要用旧新闻！
 
