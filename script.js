@@ -127,30 +127,15 @@ async function generateContent() {
     resultText.textContent = '正在生成中，请稍候...';
 
     try {
-        const prompt = stylePrompts[style](length);
+        let prompt = stylePrompts[style](length);
+        
+        // 对于热点型，添加web_search启用标记
+        if (style === 'hot') {
+            prompt = `<|websearch|>enable<|websearch|>\n\n` + prompt;
+        }
 
         console.log('发送请求:', API_URL);
         console.log('请求模型: GLM-4.7-FlashX');
-
-        const tools = [
-            {
-                type: 'function',
-                function: {
-                    name: 'web_search',
-                    description: '使用浏览器在互联网上搜索信息',
-                    parameters: {
-                        type: 'object',
-                        properties: {
-                            query: {
-                                description: '搜索关键词',
-                                type: 'string'
-                            }
-                        },
-                        required: ['query']
-                    }
-                }
-            }
-        ];
 
         let messages = [
             {
@@ -159,49 +144,15 @@ async function generateContent() {
             }
         ];
 
-        let data = await makeRequest(messages, tools);
+        // 直接请求，不使用tools参数
+        let data = await makeRequest(messages, null);
 
-        console.log('第一次响应:', data);
+        console.log('响应:', data);
 
         let content = null;
         
         if (data.choices && data.choices[0] && data.choices[0].message) {
-            if (data.choices[0].finish_reason === 'tool_calls' && data.choices[0].message.tool_calls) {
-                console.log('检测到工具调用，GLM 正在执行搜索...');
-                console.log('工具调用详情:', JSON.stringify(data.choices[0].message.tool_calls, null, 2));
-                
-                messages.push(data.choices[0].message);
-                
-                for (const toolCall of data.choices[0].message.tool_calls) {
-                    if (toolCall.function.name === 'web_search') {
-                        let searchQuery = '';
-                        try {
-                            const args = JSON.parse(toolCall.function.arguments);
-                            searchQuery = args.query || '';
-                        } catch (e) {
-                            searchQuery = '';
-                        }
-                        
-                        messages.push({
-                            role: 'tool',
-                            tool_call_id: toolCall.id,
-                            content: JSON.stringify({
-                                result: `搜索已完成: ${searchQuery}`,
-                                status: 'success'
-                            })
-                        });
-                    }
-                }
-                
-                console.log('发送第二次请求，获取最终文案...');
-                data = await makeRequest(messages, null);
-                
-                console.log('第二次响应:', data);
-            }
-            
-            if (data.choices && data.choices[0] && data.choices[0].message) {
-                content = data.choices[0].message.content;
-            }
+            content = data.choices[0].message.content;
         }
 
         console.log('提取的内容:', content);
