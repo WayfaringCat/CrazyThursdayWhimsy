@@ -87,13 +87,12 @@ const toast = document.getElementById('toast');
 const btnText = generateBtn.querySelector('.btn-text');
 const loadingText = generateBtn.querySelector('.loading');
 
-async function makeRequest(messages, tools = null, stream = false) {
+async function makeRequest(messages, tools = null) {
     const body = {
-        model: 'GLM-4.7-FlashX',
+        model: 'GLM-4-AllTools',
         messages: messages,
         temperature: 0.8,
-        max_tokens: 4096,
-        stream: stream
+        max_tokens: 4096
     };
     
     if (tools) {
@@ -118,6 +117,24 @@ async function makeRequest(messages, tools = null, stream = false) {
     return JSON.parse(responseText);
 }
 
+function parseXmlToolCall(content) {
+    const regex = /<tool_call\s+name="([^"]+)"\s*>([\s\S]*?)<\/tool_call>/g;
+    const calls = [];
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+        const name = match[1];
+        const argsStr = match[2].trim();
+        let args = {};
+        const argRegex = /<([^>]+)>([^<]*)<\/\1>/g;
+        let argMatch;
+        while ((argMatch = argRegex.exec(argsStr)) !== null) {
+            args[argMatch[1]] = argMatch[2];
+        }
+        calls.push({ name, args });
+    }
+    return calls;
+}
+
 async function generateContent() {
     const style = document.querySelector('input[name="style"]:checked').value;
     const length = document.querySelector('input[name="length"]:checked').value;
@@ -127,15 +144,30 @@ async function generateContent() {
     resultText.textContent = '正在生成中，请稍候...';
 
     try {
-        let prompt = stylePrompts[style](length);
-        
-        // 对于热点型，添加web_search启用标记
-        if (style === 'hot') {
-            prompt = `<|websearch|>enable<|websearch|>\n\n` + prompt;
-        }
+        const prompt = stylePrompts[style](length);
 
         console.log('发送请求:', API_URL);
-        console.log('请求模型: GLM-4.7-FlashX');
+        console.log('请求模型: GLM-4-AllTools');
+
+        const tools = [
+            {
+                type: 'function',
+                function: {
+                    name: 'web_search',
+                    description: '在互联网上搜索信息，返回搜索结果',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            query: {
+                                type: 'string',
+                                description: '搜索关键词'
+                            }
+                        },
+                        required: ['query']
+                    }
+                }
+            }
+        ];
 
         let messages = [
             {
@@ -144,22 +176,76 @@ async function generateContent() {
             }
         ];
 
-        // 直接请求，不使用tools参数
-        let data = await makeRequest(messages, null);
+        let data = await makeRequest(messages, style === 'hot' ? tools : null);
 
-        console.log('响应:', data);
+        console.log('第一次响应:', data);
 
         let content = null;
         
         if (data.choices && data.choices[0] && data.choices[0].message) {
-            content = data.choices[0].message.content;
+            const msg = data.choices[0].message;
+            
+            // 检查是否有工具调用（JSON格式）
+            if (data.choices[0].finish_reason === 'tool_calls' && msg.tool_calls) {
+                console.log('检测到JSON格式工具调用:', msg.tool_calls);
+                
+                messages.push(msg);
+                
+                for (const toolCall of msg.tool_calls) {
+                    if (toolCall.function.name === 'web_search') {
+                        messages.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            content: JSON.stringify({ status: 'success', message: '搜索已完成' })
+                        });
+                    }
+                }
+                
+                data = await makeRequest(messages, tools);
+                console.log('第二次响应:', data);
+                
+                if (data.choices && data.choices[0] && data.choices[0].message) {
+                    content = data.choices[0].message.content;
+                }
+            }
+            // 检查是否有XML格式的工具调用
+            else if (msg.content && msg.content.includes('<tool_call')) {
+                console.log('检测到XML格式工具调用');
+                
+                const toolCalls = parseXmlToolCall(msg.content);
+                console.log('解析的工具调用:', toolCalls);
+                
+                messages.push(msg);
+                
+                for (const tc of toolCalls) {
+                    if (tc.name === 'web_search') {
+                        messages.push({
+                            role: 'tool',
+                            content: JSON.stringify({ 
+                                status: 'success', 
+                                query: tc.args.query || '',
+                                message: '搜索已完成，请基于搜索结果回答' 
+                            })
+                        });
+                    }
+                }
+                
+                data = await makeRequest(messages, tools);
+                console.log('第二次响应:', data);
+                
+                if (data.choices && data.choices[0] && data.choices[0].message) {
+                    content = data.choices[0].message.content;
+                }
+            }
+            else {
+                content = msg.content;
+            }
         }
 
         console.log('提取的内容:', content);
-        console.log('finish_reason:', data.choices ? data.choices[0].finish_reason : 'N/A');
 
         if (!content || content.trim() === '') {
-            resultText.textContent = `⚠️ API返回内容为空\n\nfinish_reason: ${data.choices ? data.choices[0].finish_reason : 'N/A'}\n\n原始响应:\n${JSON.stringify(data, null, 2).substring(0, 1000)}\n\n请检查浏览器控制台(F12)查看完整信息`;
+            resultText.textContent = `⚠️ API返回内容为空\n\nfinish_reason: ${data.choices ? data.choices[0].finish_reason : 'N/A'}\n\n原始响应:\n${JSON.stringify(data, null, 2).substring(0, 2000)}\n\n请检查浏览器控制台(F12)查看完整信息`;
             resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             return;
         }
