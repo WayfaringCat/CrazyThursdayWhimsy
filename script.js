@@ -1,5 +1,5 @@
 const API_KEY = 'sk-WUnaFKemy2rZL6IUNJvZWH4oGa3v089fgaaWjmZBAI1xsqb6';
-// 修正：去除 URL 末尾的空格
+// 注意：原代码 URL 末尾多了一个空格，这里已去除
 const API_URL = 'https://api.moonshot.cn/v1/chat/completions';
 
 const stylePrompts = {
@@ -85,26 +85,19 @@ const toast = document.getElementById('toast');
 const btnText = generateBtn.querySelector('.btn-text');
 const loadingText = generateBtn.querySelector('.loading');
 
-// 工具定义：使用 Kimi 内置的联网搜索功能
-const tools = [
-    {
-        type: 'builtin_function',
-        function: {
-            name: '$web_search'
-        }
-    }
-];
-
-async function makeRequest(messages, toolsParam = null) {
+// 封装基础请求函数
+async function makeRequest(messages, tools = null) {
     const body = {
         model: 'kimi-k2-turbo-preview',
         messages: messages,
         temperature: 0.8,
-        max_tokens: 4096
+        max_tokens: 4096,
+        stream: false
     };
-    
-    if (toolsParam) {
-        body.tools = toolsParam;
+
+    // 只有在 tools 不为 null 时才添加到请求体中
+    if (tools) {
+        body.tools = tools;
     }
 
     const response = await fetch(API_URL, {
@@ -117,7 +110,7 @@ async function makeRequest(messages, toolsParam = null) {
     });
 
     const responseText = await response.text();
-    
+
     if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${responseText}`);
     }
@@ -125,6 +118,7 @@ async function makeRequest(messages, toolsParam = null) {
     return JSON.parse(responseText);
 }
 
+// 核心生成逻辑 - 根据文档重写了 Tool Loop
 async function generateContent() {
     const style = document.querySelector('input[name="style"]:checked').value;
     const length = document.querySelector('input[name="length"]:checked').value;
@@ -136,14 +130,21 @@ async function generateContent() {
     try {
         const prompt = stylePrompts[style](length);
 
-        console.log('开始生成，模型: kimi-k2-turbo-preview');
+        console.log('发送请求:', API_URL);
+        console.log('请求模型: kimi-k2-turbo-preview');
 
-        // 初始化消息列表，添加 system message（官方文档标准做法）
-        let messages = [
+        // 定义工具：使用 Kimi 的内置搜索功能
+        const tools = [
             {
-                role: 'system',
-                content: '你是 Kimi，由 Moonshot AI 提供的人工智能助手，你更擅长中文和英文的对话。你会为用户提供安全，有帮助，准确的回答。同时，你会拒绝一切涉及恐怖主义，种族歧视，黄色暴力等问题的回答。Moonshot AI 为专有名词，不可翻译成其他语言。'
-            },
+                type: 'builtin_function',
+                function: {
+                    name: '$web_search'
+                }
+            }
+        ];
+
+        // 初始化消息历史
+        let messages = [
             {
                 role: 'user',
                 content: prompt
@@ -151,15 +152,20 @@ async function generateContent() {
         ];
 
         let finishReason = null;
-        let content = null;
-        let attempts = 0;
-        const maxAttempts = 5; // 防止无限循环
+        let finalContent = null;
+        let callCount = 0;
+        const MAX_LOOPS = 5; // 防止死循环
 
-        // 使用 while 循环处理工具调用（官方文档标准流程）
-        while ((finishReason === null || finishReason === 'tool_calls') && attempts < maxAttempts) {
-            attempts++;
-            console.log(`第 ${attempts} 次请求...`);
+        // 循环处理，直到 finish_reason 不再是 tool_calls
+        while (finishReason === null || finishReason === 'tool_calls') {
+            if (callCount >= MAX_LOOPS) {
+                throw new Error("工具调用次数过多，强制停止");
+            }
+            callCount++;
 
+            // 发送请求
+            // 注意：如果是工具调用后的后续请求，通常也需要带上 tools 定义，
+            // 否则模型可能无法正确解析之前的 tool_calls 上下文或进行多步搜索。
             const data = await makeRequest(messages, tools);
             
             if (!data.choices || !data.choices[0]) {
@@ -167,59 +173,55 @@ async function generateContent() {
             }
 
             const choice = data.choices[0];
+            const message = choice.message;
             finishReason = choice.finish_reason;
 
-            console.log('finish_reason:', finishReason);
+            console.log(`第 ${callCount} 次响应 finish_reason:`, finishReason);
 
+            // 如果是工具调用
             if (finishReason === 'tool_calls') {
-                // 将 assistant 的 tool_calls 消息加入上下文
-                messages.push(choice.message);
-                console.log('检测到工具调用:', JSON.stringify(choice.message.tool_calls, null, 2));
+                console.log('检测到工具调用:', JSON.stringify(message.tool_calls, null, 2));
+                
+                // 1. 将助手的消息（包含 tool_calls）添加到历史记录
+                messages.push(message);
 
-                // 为每个 tool_call 添加执行结果
-                // 注意：对于 $web_search 这个 builtin_function，Kimi 服务端会自动执行搜索
-                // 但按照 API 规范，我们仍需要添加 role=tool 的消息来表示工具已执行
-                for (const toolCall of choice.message.tool_calls) {
-                    const toolCallName = toolCall.function.name;
-                    
-                    // 构建工具执行结果
-                    // 对于内置搜索工具，我们传递一个占位结果，实际搜索结果由服务端自动注入上下文
-                    const toolResult = {
-                        status: 'completed',
-                        tool_name: toolCallName,
-                        note: 'Search completed by server-side builtin function'
-                    };
-
+                // 2. 处理每一个 tool_call
+                // 对于 $web_search (builtin_function)，通常服务端已自动处理。
+                // 但如果模型返回了 tool_calls，我们需要回传一个 role: 'tool' 的消息来闭环。
+                // 我们模拟一个“成功”的回执，让模型知道它可以继续生成了。
+                for (const toolCall of message.tool_calls) {
+                    // 构造 Tool Message
                     messages.push({
                         role: 'tool',
                         tool_call_id: toolCall.id,
-                        name: toolCallName,
-                        content: JSON.stringify(toolResult)
+                        name: toolCall.function.name,
+                        content: JSON.stringify({ result: "搜索引擎已执行，请根据搜索结果回答。" }) 
+                        // 注意：对于 builtin_function，通常不需要客户端真正去爬取，
+                        // 搜索结果往往会自动注入到 context 中，或者模型只是需要一个触发信号。
                     });
                 }
+                
+                // 循环将继续，带着 tool results 再次请求 API
+                
             } else {
-                // 获取最终生成的内容
-                content = choice.message.content;
+                // 如果不是工具调用，说明生成完成了（finish_reason === 'stop'）
+                finalContent = message.content;
             }
         }
 
-        if (attempts >= maxAttempts) {
-            throw new Error('工具调用次数过多，可能陷入循环');
-        }
+        console.log('生成完成');
 
-        console.log('生成完成，内容长度:', content ? content.length : 0);
-
-        if (!content || content.trim() === '') {
-            resultText.textContent = `⚠️ API返回内容为空\n\n请检查模型是否正确调用了搜索工具，或稍后重试。`;
-            resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        if (!finalContent || finalContent.trim() === '') {
+            resultText.textContent = '⚠️ 生成内容为空，请重试。';
             return;
         }
 
-        resultText.textContent = content;
+        resultText.textContent = finalContent;
         resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
     } catch (error) {
         console.error('生成失败:', error);
-        resultText.textContent = `❌ 生成失败\n\n错误类型: ${error.name}\n错误信息: ${error.message}\n\n请检查:\n1. API Key 是否正确且未过期\n2. 网络连接是否正常\n3. 是否触发了内容安全策略\n\n技术细节请查看浏览器控制台(F12)`;
+        resultText.textContent = `❌ 生成失败\n\n错误类型: ${error.name}\n错误信息: ${error.message}\n\n请检查:\n1. API Key 是否正确\n2. 网络连接是否正常\n3. 浏览器控制台(F12)查看详细错误`;
     } finally {
         setLoading(false);
     }
