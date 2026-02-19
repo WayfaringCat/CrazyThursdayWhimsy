@@ -148,37 +148,19 @@ async function generateContent() {
 
         console.log('第一次响应:', data);
 
-        // 处理工具调用 - Kimi 的 $web_search 是自动执行的
+        // 处理工具调用 - Kimi 的 $web_search 是服务端自动执行的
         let content = null;
         
         if (data.choices && data.choices[0] && data.choices[0].message) {
             // 如果有工具调用，需要继续对话获取最终结果
             if (data.choices[0].finish_reason === 'tool_calls' && data.choices[0].message.tool_calls) {
                 console.log('检测到工具调用，Kimi 正在执行搜索...');
+                console.log('工具调用详情:', JSON.stringify(data.choices[0].message.tool_calls, null, 2));
                 
-                // 将助手的消息（包含 tool_calls）添加到消息列表
+                // Kimi 的 $web_search 是服务端自动执行的
+                // 当返回 tool_calls 时，搜索已经在服务端完成，结果会自动注入到上下文中
+                // 我们只需要将助手消息添加到对话历史，然后再次请求（不传递 tools）
                 messages.push(data.choices[0].message);
-                
-                // 为每个工具调用添加执行结果
-                // 对于 $web_search，我们传递搜索ID，让 Kimi 服务端获取结果
-                for (const toolCall of data.choices[0].message.tool_calls) {
-                    if (toolCall.function.name === '$web_search') {
-                        // 解析工具调用的参数，获取 search_id
-                        let toolArgs;
-                        try {
-                            toolArgs = JSON.parse(toolCall.function.arguments);
-                        } catch (e) {
-                            toolArgs = {};
-                        }
-                        
-                        // 添加工具调用结果，包含 search_id
-                        messages.push({
-                            role: 'tool',
-                            tool_call_id: toolCall.id,
-                            content: toolCall.function.arguments
-                        });
-                    }
-                }
                 
                 // 第二次调用，获取最终生成的文案（不传递 tools，让模型基于搜索结果生成）
                 console.log('发送第二次请求，获取最终文案...');
